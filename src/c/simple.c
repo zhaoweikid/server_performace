@@ -32,7 +32,7 @@ int make_date(char *buffer, int buflen)
 	return 0;
 }
 
-int read_req(int fd) 
+int read_req(int fd, int *keepalive) 
 {
 	char readbuf[4096] = {0};
 	int  rlen;
@@ -47,6 +47,12 @@ int read_req(int fd)
 	readbuf[rlen] = 0;
 	//LOG("read:|%d|%d|%s|\n\n", fd, rlen, readbuf);
 	LOG("read:|%d|%d|\n", fd, rlen);
+
+	if (strstr(readbuf, "Keep-Alive") != NULL || strstr(readbuf, "keep-alive") != NULL) {
+		*keepalive = 1;
+	}else{
+		*keepalive = 0;
+	}
 
 	return rlen;
 }
@@ -126,10 +132,7 @@ int main()
 		return -1;
 	}
 
-	//char *resp = "HTTP/1.1 200 OK\r\nServer: cserver\r\nContent-Type: text/html;charset=utf-8\r\nContent-Length: 2\r\nConnection: close\r\n\r\nGO";
-	//int  resplen = strlen(resp);
-
-	int keepalive = KEEP_ALIVE;
+	int keepalive = 1;
  	while (1) {
 		struct sockaddr_in remote_addr;
     	socklen_t sin_size = sizeof(struct sockaddr_in);
@@ -140,9 +143,18 @@ int main()
     		LOG("receive failed\n");
 			continue;
 		}
+		
+		struct timeval tv; 
+		tv.tv_sec = 1; 
+		tv.tv_usec = 0;
+		ret = setsockopt(new_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+		if (ret < 0) {
+			LOG("set recv timeout error:%s", strerror(errno));
+			return -2;
+		}
 	
 		while (1) {	
-			ret = read_req(new_fd);
+			ret = read_req(new_fd, &keepalive);
 			if (ret <= 0) {
 				LOG("read close fd %d\n", new_fd);
 				close(new_fd);

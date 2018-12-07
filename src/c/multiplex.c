@@ -50,7 +50,7 @@ void setnonblocking(int sock)
     }
 }
 
-int read_req(int fd) 
+int read_req(int fd, int *keepalive) 
 {
 	char readbuf[4096] = {0};
 	int  rlen;
@@ -58,16 +58,24 @@ int read_req(int fd)
 	rlen = read(fd, readbuf, 1024);
 	//printf("readlen: %d\n", rlen);
 	if (rlen <= 0) {
-		LOG("read:%d\n", rlen);
+		LOG("%d read:%d\n", fd, rlen);
 		return rlen;
 	}
 
 	readbuf[rlen] = 0;
 	//LOG("read:|%d|%d|%s|\n\n", fd, rlen, readbuf);
-	LOG("read:|%d|%d|\n", fd, rlen);
+	LOG("%d read:|%d|\n", fd, rlen);
+
+	if (strstr(readbuf, "Keep-Alive") != NULL || strstr(readbuf, "keep-alive") != NULL) {
+		*keepalive = 1;
+	}else{
+		*keepalive = 0;
+	}
 
 	return rlen;
 }
+
+
 
 int write_resp(int fd, int keepalive)
 {
@@ -90,11 +98,11 @@ int write_resp(int fd, int keepalive)
 
 	int ret = write(fd, resp2, resplen);
 	if (ret < 0) {
-		LOG("write:%d\n", ret);
+		LOG("%d write %d\n", fd, ret);
 		return ret;
 	}
 	//LOG("write:|%d|%d|%s|\n\n", fd, ret, resp2);
-	LOG("write:|%d|%d|\n", fd, ret);
+	LOG("%d write:|%d|\n", fd, ret);
 	
 	return resplen;
 }
@@ -147,13 +155,14 @@ int main()
 	//char *resp = "HTTP/1.1 200 OK\r\nServer: cserver\r\nContent-Type: text/html;charset=utf-8\r\nContent-Length: 2\r\nConnection: close\r\n\r\nGO";
 	//int  resplen = strlen(resp);
 
-	int keepalive = KEEP_ALIVE;
+	int keepalive = 1;
 
 	struct epoll_event ev, events[20];
 	int epfd = epoll_create(256);
 
 	ev.data.fd = sockfd;
-	ev.events = EPOLLIN | EPOLLET;	
+	//ev.events = EPOLLIN | EPOLLET;	
+	ev.events = EPOLLIN;	
 	epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev);
 
 	int8_t avail;
@@ -167,7 +176,7 @@ int main()
 				struct sockaddr_in client_addr;
 				socklen_t sin_size = sizeof(struct sockaddr_in);
 				new_fd = accept(sockfd, (struct sockaddr*)&client_addr, &sin_size);
-				LOG("newfd: %d\n", new_fd);
+				LOG("%d newfd\n", new_fd);
 				
 				setnonblocking(new_fd);
 
@@ -178,16 +187,17 @@ int main()
 			}else if (events[i].events & EPOLLIN) {
 				LOG("%d pollin\n", myfd);
 
-				ioctl(myfd, FIONREAD, &avail);
-				LOG("socket %d read buffer:%d\n", myfd, avail);
+				//ioctl(myfd, FIONREAD, &avail);
+				//LOG("%d read buffer:%d\n", myfd, avail);
 	
-				ret = read_req(myfd);
+				ret = read_req(myfd, &keepalive);
 				if (ret <= 0) {
 					ev.data.fd = myfd;
 					ev.events = EPOLLIN | EPOLLET;
 					epoll_ctl(epfd, EPOLL_CTL_DEL, myfd, &ev);
 					close(myfd);
-					LOG("close fd %d\n", new_fd);
+					LOG("%d close fd\n", myfd);
+					continue;
 				}
 
 
@@ -201,12 +211,12 @@ int main()
 					ev.events = EPOLLIN | EPOLLET;
 					epoll_ctl(epfd, EPOLL_CTL_DEL, myfd, &ev);
 					close(myfd);
-					LOG("close fd %d\n", new_fd);
+					LOG("%d close fd\n", myfd);
 				}
 
 
-				ioctl(myfd, FIONREAD, &avail);
-				LOG("socket %d read buffer:%d\n", myfd, avail);
+				//ioctl(myfd, FIONREAD, &avail);
+				//LOG("%d read buffer:%d\n", myfd, avail);
 
 			}else if (events[i].events & EPOLLOUT) {
 				LOG("%d pollout\n", myfd);
