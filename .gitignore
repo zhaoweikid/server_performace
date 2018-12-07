@@ -1,0 +1,8 @@
+*.o
+*.os
+*.swp
+*.a
+*.so
+*.pyc
+*.class
+*.pyo
